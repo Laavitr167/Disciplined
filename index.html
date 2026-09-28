@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>My Tracker</title>
+<link rel="manifest" href="manifest.json">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<meta name="theme-color" content="#1d5f7a">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bg:#eef3f6;--card:#fff;--ink:#14252e;--muted:#66808d;--line:#d5e0e6;--done:#1f9d7a;--left:#f0a04b;--accent:#1d5f7a;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1a20;--card:#172830;--ink:#e6f0f4;--muted:#8ba5b2;--line:#28414c;--done:#39c29b;--left:#e8a25a;--accent:#6cc1de}}
+:root[data-theme="dark"]{--bg:#0f1a20;--card:#172830;--ink:#e6f0f4;--muted:#8ba5b2;--line:#28414c;--done:#39c29b;--left:#e8a25a;--accent:#6cc1de}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",sans-serif;line-height:1.4}
+main{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:1.5rem;margin:8px 0 2px}
+h2{font-size:1.1rem;margin:0 0 10px}
+.sub{color:var(--muted);margin:0 0 14px}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs button{flex:1;padding:10px;border:2px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;font-size:1rem;cursor:pointer}
+.tabs button.on{background:var(--accent);border-color:var(--accent);color:var(--bg);font-weight:bold}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.row{display:flex;gap:8px;align-items:center}
+input[type=text],input[type=number],select{flex:1;min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-size:1rem}
+button.go{padding:10px 14px;border:0;border-radius:8px;background:var(--accent);color:var(--bg);font-size:1rem;cursor:pointer}
+button.small{border:1px solid var(--line);background:none;color:var(--muted);border-radius:6px;padding:4px 8px;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+ul{list-style:none;margin:10px 0 0;padding:0}
+li{display:flex;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+li span.t{flex:1;word-break:break-word}
+li.done span.t{text-decoration:line-through;color:var(--muted)}
+li input[type=checkbox]{width:22px;height:22px;accent-color:var(--done)}
+li input[type=number]{flex:0 0 90px}
+canvas{width:100%;display:block}
+.pie{max-width:230px;margin:0 auto}
+.empty{color:var(--muted);margin:8px 0 0}
+details{border-top:1px solid var(--line);padding:8px 0}
+summary{cursor:pointer}
+.hide{display:none}
+.streak{color:var(--left)}
+table.wk{width:100%;border-collapse:collapse;text-align:center}
+table.wk td,table.wk th{padding:6px 3px;border-top:1px solid var(--line);font-size:.9rem}
+table.wk td:first-child,table.wk th:first-child{text-align:left}
+</style>
+</head>
+<body>
+<main>
+<h1>My Tracker</h1>
+<p class="sub" id="dateText"></p>
+<p class="sub"><span id="syncText">Saved on this device only</span> <button class="small hide" id="logoutBtn">Log out</button></p>
+<div class="card hide" id="loginBox">
+  <h2>Sign in to sync your phone and laptop</h2>
+  <div class="row"><input type="text" id="email" placeholder="Email"></div>
+  <div class="row" style="margin-top:8px"><input type="password" id="password" placeholder="Password (6+ characters)" style="flex:1;min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-size:1rem"></div>
+  <div class="row" style="margin-top:8px"><button class="go" id="signInBtn">Sign in</button><button class="go" id="signUpBtn">Sign up</button></div>
+  <p class="empty" id="loginMsg"></p>
+</div>
+<div class="tabs">
+  <button id="tabTodo" class="on">To-do list</button>
+  <button id="tabHabit">Habits</button>
+</div>
+
+<section id="todoPage">
+  <div class="card">
+    <h2>Today's tasks</h2>
+    <div class="row"><input type="text" id="taskInput" placeholder="Add a task"><button class="go" id="addTask">Add</button></div>
+    <ul id="taskList"></ul>
+    <p class="empty" id="taskEmpty">No tasks yet. Add your first one above.</p>
+  </div>
+  <div class="card">
+    <h2>Task progress</h2>
+    <div class="pie"><canvas id="taskPie" width="300" height="300"></canvas></div>
+  </div>
+  <div class="card">
+    <h2>History</h2>
+    <div id="taskHistory"></div>
+  </div>
+</section>
+
+<section id="habitPage" class="hide">
+  <div class="card">
+    <h2>New habit</h2>
+    <div class="row"><input type="text" id="habitName" placeholder="Habit name, e.g. Steps"></div>
+    <div class="row" style="margin-top:8px">
+      <select id="habitType"><option value="check">Yes / No</option><option value="number">Number with a goal</option></select>
+      <input type="number" id="habitGoal" placeholder="Goal, e.g. 15000" class="hide">
+      <button class="go" id="addHabit">Add</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Today's habits</h2>
+    <ul id="habitList"></ul>
+    <p class="empty" id="habitEmpty">No habits yet. Add one above.</p>
+  </div>
+  <div class="card">
+    <h2>Today's progress</h2>
+    <div class="pie"><canvas id="habitPie" width="300" height="300"></canvas></div>
+  </div>
+  <div class="card">
+    <h2>This week</h2>
+    <div id="weekGrid" style="overflow-x:auto"></div>
+  </div>
+  <div class="card">
+    <h2>Progress over time</h2>
+    <select id="graphHabit"></select>
+    <canvas id="lineGraph" width="600" height="300" style="margin-top:10px"></canvas>
+    <p class="empty" id="graphEmpty">Add a number habit to see its graph.</p>
+  </div>
+</section>
+<div class="card">
+  <h2>Backup</h2>
+  <p class="sub">Your data lives in this browser. Save a backup file now and then.</p>
+  <div class="row">
+    <button class="go" id="exportBtn">Export</button>
+    <button class="go" id="importBtn">Import</button>
+    <input type="file" id="importFile" accept=".json" class="hide">
+  </div>
+</div>
+</main>
+
+<script>
+// ---------- saved data ----------
+var data = { todos: {}, habits: [], logs: {} };
+var currentTab = "todo";
+var db = null, user = null, saveTimer = null;
+
+// ---- paste your Supabase values here ----
+var SUPABASE_URL = "https://supabase.com/dashboard/project/viixqvncpriknmzvpfdv";
+var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpaXhxdm5jcHJpa25tenZwZmR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1NzcyNjUsImV4cCI6MjEwNjE1MzI2NX0.AJ32bV7ex4cED_Q6aJP9MsHMqFlQGstyHQlPVUH1HtE";
+
+function loadData() {
+  try {
+    var saved = localStorage.getItem("myTrackerData");
+    if (saved) { data = JSON.parse(saved); }
+  } catch (e) { }
+}
+function saveData() {
+  try { localStorage.setItem("myTrackerData", JSON.stringify(data)); } catch (e) { }
+  if (user) {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(pushToCloud, 800);
+  }
+}
+
+function getToday() {
+  var d = new Date();
+  var m = String(d.getMonth() + 1).padStart(2, "0");
+  var day = String(d.getDate()).padStart(2, "0");
+  return d.getFullYear() + "-" + m + "-" + day;
+}
+var today = getToday();
+
+function css(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// ---------- pie chart ----------
+function drawPie(canvas, done, total) {
+  var c = canvas.getContext("2d");
+  var w = canvas.width;
+  c.clearRect(0, 0, w, w);
+  var cx = w / 2, r = w / 2 - 10;
+  if (total === 0) {
+    c.beginPath(); c.arc(cx, cx, r, 0, Math.PI * 2);
+    c.fillStyle = css("--line"); c.fill();
+  } else {
+    var doneAngle = (done / total) * Math.PI * 2;
+    var start = -Math.PI / 2;
+    c.beginPath(); c.moveTo(cx, cx); c.arc(cx, cx, r, 0, Math.PI * 2);
+    c.fillStyle = css("--left"); c.fill();
+    if (done > 0) {
+      c.beginPath(); c.moveTo(cx, cx);
+      c.arc(cx, cx, r, start, start + doneAngle);
+      c.fillStyle = css("--done"); c.fill();
+    }
+  }
+  // hole in the middle
+  c.beginPath(); c.arc(cx, cx, r * 0.58, 0, Math.PI * 2);
+  c.fillStyle = css("--card"); c.fill();
+  c.fillStyle = css("--ink");
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.font = "bold 44px Trebuchet MS, sans-serif";
+  c.fillText(done + "/" + total, cx, cx - 8);
+  c.font = "20px Trebuchet MS, sans-serif";
+  c.fillStyle = css("--muted");
+  c.fillText(total === 0 ? "nothing yet" : "done", cx, cx + 28);
+}
+
+// ---------- to-do list ----------
+function getTasks() {
+  if (!data.todos[today]) { data.todos[today] = []; }
+  return data.todos[today];
+}
+
+function renderTasks() {
+  var tasks = getTasks();
+  var list = document.getElementById("taskList");
+  list.innerHTML = "";
+  var doneCount = 0;
+  for (var i = 0; i < tasks.length; i++) {
+    (function (i) {
+      var t = tasks[i];
+      if (t.done) { doneCount++; }
+      var li = document.createElement("li");
+      if (t.done) { li.className = "done"; }
+      var box = document.createElement("input");
+      box.type = "checkbox"; box.checked = t.done;
+      box.setAttribute("aria-label", "Mark done: " + t.text);
+      box.onchange = function () { t.done = box.checked; saveData(); renderTasks(); };
+      var span = document.createElement("span");
+      span.className = "t"; span.textContent = t.text;
+      var edit = document.createElement("button");
+      edit.className = "small"; edit.textContent = "Edit";
+      edit.onclick = function () {
+        var newText = prompt("Edit task", t.text);
+        if (newText && newText.trim() !== "") { t.text = newText.trim(); saveData(); renderTasks(); }
+      };
+      var del = document.createElement("button");
+      del.className = "small"; del.textContent = "Delete";
+      del.onclick = function () { tasks.splice(i, 1); saveData(); renderTasks(); };
+      li.appendChild(box); li.appendChild(span); li.appendChild(edit); li.appendChild(del);
+      list.appendChild(li);
+    })(i);
+  }
+  document.getElementById("taskEmpty").className = tasks.length === 0 ? "empty" : "hide";
+  drawPie(document.getElementById("taskPie"), doneCount, tasks.length);
+  renderTaskHistory();
+}
+
+function renderTaskHistory() {
+  var box = document.getElementById("taskHistory");
+  box.innerHTML = "";
+  var dates = Object.keys(data.todos).sort().reverse();
+  var shown = 0;
+  for (var i = 0; i < dates.length; i++) {
+    var day = dates[i];
+    if (day === today) { continue; }
+    var tasks = data.todos[day];
+    if (tasks.length === 0) { continue; }
+    var doneCount = 0, html = "";
+    for (var j = 0; j < tasks.length; j++) {
+      if (tasks[j].done) { doneCount++; }
+      html += "<div>" + (tasks[j].done ? "✔ " : "✘ ") + escapeHtml(tasks[j].text) + "</div>";
+    }
+    var d = document.createElement("details");
+    d.innerHTML = "<summary>" + day + " — " + doneCount + " of " + tasks.length + " done</summary>" + html;
+    box.appendChild(d);
+    shown++;
+  }
+  if (shown === 0) { box.innerHTML = '<p class="empty">Past days will show up here.</p>'; }
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+document.getElementById("addTask").onclick = addTask;
+document.getElementById("taskInput").onkeydown = function (e) { if (e.key === "Enter") { addTask(); } };
+function addTask() {
+  var input = document.getElementById("taskInput");
+  var text = input.value.trim();
+  if (text === "") { return; }
+  getTasks().push({ text: text, done: false });
+  input.value = "";
+  saveData(); renderTasks();
+}
+
+// ---------- habits ----------
+function getLog() {
+  if (!data.logs[today]) { data.logs[today] = {}; }
+  return data.logs[today];
+}
+
+function habitDone(h, value) {
+  if (h.type === "check") { return value === true; }
+  return typeof value === "number" && value >= h.goal;
+}
+
+function renderHabits() {
+  var list = document.getElementById("habitList");
+  list.innerHTML = "";
+  var log = getLog();
+  var doneCount = 0;
+  for (var i = 0; i < data.habits.length; i++) {
+    (function (i) {
+      var h = data.habits[i];
+      var value = log[h.id];
+      var isDone = habitDone(h, value);
+      if (isDone) { doneCount++; }
+      var li = document.createElement("li");
+      if (isDone) { li.className = "done"; }
+      var span = document.createElement("span");
+      span.className = "t";
+      span.textContent = h.type === "number" ? h.name + " (goal " + h.goal + ")" : h.name;
+      var streak = getStreak(h);
+      if (streak > 1) { span.textContent += "  🔥" + streak; }
+      if (h.type === "check") {
+        var box = document.createElement("input");
+        box.type = "checkbox"; box.checked = value === true;
+        box.setAttribute("aria-label", "Mark done: " + h.name);
+        box.onchange = function () { log[h.id] = box.checked; saveData(); renderHabits(); };
+        li.appendChild(box); li.appendChild(span);
+      } else {
+        var num = document.createElement("input");
+        num.type = "number"; num.placeholder = "0";
+        num.setAttribute("aria-label", "Amount for " + h.name);
+        if (typeof value === "number") { num.value = value; }
+        var save = document.createElement("button");
+        save.className = "small"; save.textContent = "Save";
+        save.onclick = function () {
+          if (num.value === "") { return; }
+          log[h.id] = Number(num.value); saveData(); renderHabits();
+        };
+        li.appendChild(span); li.appendChild(num); li.appendChild(save);
+      }
+      var del = document.createElement("button");
+      del.className = "small"; del.textContent = "Delete";
+      del.onclick = function () {
+        if (confirm("Delete habit '" + h.name + "' and its history?")) {
+          data.habits.splice(i, 1); saveData(); renderHabits();
+        }
+      };
+      li.appendChild(del);
+      list.appendChild(li);
+    })(i);
+  }
+  document.getElementById("habitEmpty").className = data.habits.length === 0 ? "empty" : "hide";
+  drawPie(document.getElementById("habitPie"), doneCount, data.habits.length);
+  renderGraphChoices();
+  drawLine();
+  renderWeek();
+}
+
+// ---------- streaks and week view ----------
+function dateKey(daysAgo) {
+  var d = new Date(); d.setDate(d.getDate() - daysAgo);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function habitDoneOn(h, daysAgo) {
+  var log = data.logs[dateKey(daysAgo)];
+  return habitDone(h, log ? log[h.id] : undefined);
+}
+function getStreak(h) {
+  var count = 0;
+  var back = habitDoneOn(h, 0) ? 0 : 1;   // today not done yet? start from yesterday
+  while (back < 400 && habitDoneOn(h, back)) { count++; back++; }
+  return count;
+}
+function renderWeek() {
+  var names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var html = "<table class='wk'><tr><th></th>";
+  for (var k = 6; k >= 0; k--) {
+    var d = new Date(); d.setDate(d.getDate() - k);
+    html += "<th>" + names[d.getDay()] + "</th>";
+  }
+  html += "</tr>";
+  for (var i = 0; i < data.habits.length; i++) {
+    html += "<tr><td>" + escapeHtml(data.habits[i].name) + "</td>";
+    for (var j = 6; j >= 0; j--) {
+      html += "<td>" + (habitDoneOn(data.habits[i], j) ? "✔" : "·") + "</td>";
+    }
+    html += "</tr>";
+  }
+  html += "</table>";
+  document.getElementById("weekGrid").innerHTML = data.habits.length === 0 ? '<p class="empty">Add a habit to see your week.</p>' : html;
+}
+
+document.getElementById("habitType").onchange = function () {
+  document.getElementById("habitGoal").className = this.value === "number" ? "" : "hide";
+};
+document.getElementById("addHabit").onclick = function () {
+  var name = document.getElementById("habitName").value.trim();
+  var type = document.getElementById("habitType").value;
+  var goal = Number(document.getElementById("habitGoal").value);
+  if (name === "") { return; }
+  if (type === "number" && goal <= 0) { alert("Enter a goal number bigger than 0."); return; }
+  data.habits.push({ id: "h" + Date.now(), name: name, type: type, goal: goal });
+  document.getElementById("habitName").value = "";
+  document.getElementById("habitGoal").value = "";
+  saveData(); renderHabits();
+};
+
+// ---------- line graph ----------
+function renderGraphChoices() {
+  var sel = document.getElementById("graphHabit");
+  var old = sel.value;
+  sel.innerHTML = "";
+  var count = 0;
+  for (var i = 0; i < data.habits.length; i++) {
+    if (data.habits[i].type === "number") {
+      var o = document.createElement("option");
+      o.value = data.habits[i].id; o.textContent = data.habits[i].name;
+      sel.appendChild(o); count++;
+    }
+  }
+  if (old) { sel.value = old; }
+  sel.className = count === 0 ? "hide" : "";
+  document.getElementById("lineGraph").className = count === 0 ? "hide" : "";
+  document.getElementById("graphEmpty").className = count === 0 ? "empty" : "hide";
+}
+document.getElementById("graphHabit").onchange = drawLine;
+
+function drawLine() {
+  var canvas = document.getElementById("lineGraph");
+  var id = document.getElementById("graphHabit").value;
+  var habit = null;
+  for (var i = 0; i < data.habits.length; i++) { if (data.habits[i].id === id) { habit = data.habits[i]; } }
+  var c = canvas.getContext("2d");
+  var W = canvas.width, H = canvas.height;
+  c.clearRect(0, 0, W, H);
+  if (!habit) { return; }
+
+  // last 14 days, oldest first
+  var days = [];
+  for (var k = 13; k >= 0; k--) {
+    var d = new Date(); d.setDate(d.getDate() - k);
+    var key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    var v = data.logs[key] ? data.logs[key][habit.id] : undefined;
+    days.push({ label: d.getDate(), value: typeof v === "number" ? v : null });
+  }
+  var maxV = habit.goal;
+  for (var j = 0; j < days.length; j++) { if (days[j].value !== null && days[j].value > maxV) { maxV = days[j].value; } }
+  maxV = maxV * 1.1;
+
+  var left = 60, right = W - 15, top = 15, bottom = H - 35;
+  function xPos(n) { return left + (right - left) * n / 13; }
+  function yPos(v) { return bottom - (bottom - top) * v / maxV; }
+
+  // axes
+  c.strokeStyle = css("--line"); c.lineWidth = 1;
+  c.fillStyle = css("--muted"); c.font = "14px Trebuchet MS, sans-serif";
+  c.textAlign = "right"; c.textBaseline = "middle";
+  for (var g = 0; g <= 4; g++) {
+    var val = maxV * g / 4;
+    c.beginPath(); c.moveTo(left, yPos(val)); c.lineTo(right, yPos(val)); c.stroke();
+    c.fillText(Math.round(val), left - 6, yPos(val));
+  }
+  c.textAlign = "center"; c.textBaseline = "top";
+  for (var n = 0; n < 14; n++) { c.fillText(days[n].label, xPos(n), bottom + 8); }
+
+  // goal line
+  c.setLineDash([6, 5]); c.strokeStyle = css("--left"); c.lineWidth = 2;
+  c.beginPath(); c.moveTo(left, yPos(habit.goal)); c.lineTo(right, yPos(habit.goal)); c.stroke();
+  c.setLineDash([]);
+
+  // joined points
+  c.strokeStyle = css("--accent"); c.lineWidth = 3;
+  c.beginPath();
+  var started = false;
+  for (var p = 0; p < days.length; p++) {
+    if (days[p].value === null) { continue; }
+    if (!started) { c.moveTo(xPos(p), yPos(days[p].value)); started = true; }
+    else { c.lineTo(xPos(p), yPos(days[p].value)); }
+  }
+  c.stroke();
+  c.fillStyle = css("--accent");
+  for (var q = 0; q < days.length; q++) {
+    if (days[q].value === null) { continue; }
+    c.beginPath(); c.arc(xPos(q), yPos(days[q].value), 5, 0, Math.PI * 2); c.fill();
+  }
+}
+
+// ---------- tabs ----------
+function showTab(name) {
+  currentTab = name;
+  var isTodo = name === "todo";
+  document.getElementById("todoPage").className = isTodo ? "" : "hide";
+  document.getElementById("habitPage").className = isTodo ? "hide" : "";
+  document.getElementById("tabTodo").className = isTodo ? "on" : "";
+  document.getElementById("tabHabit").className = isTodo ? "" : "on";
+  if (isTodo) { renderTasks(); } else { renderHabits(); }
+}
+document.getElementById("tabTodo").onclick = function () { showTab("todo"); };
+document.getElementById("tabHabit").onclick = function () { showTab("habit"); };
+
+// ---------- backup ----------
+document.getElementById("exportBtn").onclick = function () {
+  var blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "tracker-backup-" + today + ".json";
+  a.click();
+};
+document.getElementById("importBtn").onclick = function () {
+  document.getElementById("importFile").click();
+};
+document.getElementById("importFile").onchange = function () {
+  var file = this.files[0];
+  if (!file) { return; }
+  var reader = new FileReader();
+  reader.onload = function () {
+    try {
+      var loaded = JSON.parse(reader.result);
+      if (!loaded.todos || !loaded.habits || !loaded.logs) { alert("This is not a tracker backup file."); return; }
+      if (confirm("Replace your current data with this backup?")) {
+        data = loaded; saveData(); showTab("todo");
+      }
+    } catch (e) { alert("Could not read that file."); }
+  };
+  reader.readAsText(file);
+};
+
+// ---------- offline support ----------
+try {
+  if ("serviceWorker" in navigator) { navigator.serviceWorker.register("sw.js"); }
+} catch (e) { }
+
+// ---------- cloud sync (Supabase) ----------
+function setSync(text) { document.getElementById("syncText").textContent = text; }
+
+async function pushToCloud() {
+  saveTimer = null;
+  setSync("Syncing...");
+  var result = await db.from("tracker_data").upsert({ user_id: user.id, data: data, updated_at: new Date().toISOString() });
+  setSync(result.error ? "Sync failed (saved on this device)" : "Synced ✓");
+}
+
+async function pullFromCloud() {
+  if (saveTimer) { return; }   // we have changes waiting to upload, do not overwrite them
+  var result = await db.from("tracker_data").select("data").eq("user_id", user.id).maybeSingle();
+  if (result.error) { setSync("Sync failed (saved on this device)"); return; }
+  if (result.data) {
+    data = result.data.data;
+    try { localStorage.setItem("myTrackerData", JSON.stringify(data)); } catch (e) { }
+    setSync("Synced ✓");
+    showTab(currentTab);
+  } else {
+    await pushToCloud();   // first login: upload what is on this device
+  }
+}
+
+function showLoggedIn(isIn) {
+  document.getElementById("loginBox").className = isIn ? "card hide" : "card";
+  document.getElementById("logoutBtn").className = isIn ? "small" : "small hide";
+  if (!isIn) { setSync("Sign in to sync across devices"); }
+}
+
+async function doLogin(isSignUp) {
+  var email = document.getElementById("email").value.trim();
+  var pass = document.getElementById("password").value;
+  var msg = document.getElementById("loginMsg");
+  var result;
+  if (isSignUp) { result = await db.auth.signUp({ email: email, password: pass }); }
+  else { result = await db.auth.signInWithPassword({ email: email, password: pass }); }
+  if (result.error) { msg.textContent = result.error.message; return; }
+  if (!result.data.session) { msg.textContent = "Check your email to confirm, then press Sign in."; return; }
+  user = result.data.user;
+  msg.textContent = "";
+  showLoggedIn(true);
+  pullFromCloud();
+}
+
+async function startCloud() {
+  if (!window.supabase || SUPABASE_URL.indexOf("PASTE") === 0) { return; }   // no setup yet: stay local-only
+  db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  document.getElementById("signInBtn").onclick = function () { doLogin(false); };
+  document.getElementById("signUpBtn").onclick = function () { doLogin(true); };
+  document.getElementById("logoutBtn").onclick = async function () {
+    await db.auth.signOut(); user = null; showLoggedIn(false);
+  };
+  var session = await db.auth.getSession();
+  if (session.data.session) { user = session.data.session.user; showLoggedIn(true); pullFromCloud(); }
+  else { showLoggedIn(false); }
+  // when you come back to this tab or app, fetch the latest changes
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && user) { pullFromCloud(); }
+  });
+}
+
+// ---------- start ----------
+loadData();
+document.getElementById("dateText").textContent = new Date().toDateString();
+showTab("todo");
+startCloud();
+</script>
+</body>
+</html>
